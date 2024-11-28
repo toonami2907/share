@@ -3,22 +3,40 @@ import multer from 'multer';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
-import {config} from 'dotenv'
+import { config } from 'dotenv';
 import { v4 as uuidv4 } from 'uuid';
 import os from 'os';
-config()
+import http from 'http'; // Import HTTP for Socket.IO
+import { Server } from 'socket.io'; // Import Socket.IO
+
+config();
+
 const app = express();
 const PORT = process.env.PORT || 5000;
-console.log(PORT);
+
+// Create HTTP server for Express and Socket.IO
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: [
+      'https://randomstring.ngrok.app',
+      'https://pl56tf0f-5173.uks1.devtunnels.ms',
+      'https://54a0-102-89-83-135.ngrok-free.app',
+      'http://localhost:5173'
+    ],
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  },
+});
 
 // Middleware
 app.use(cors({
-    origin: [
-      'https://randomstring.ngrok.app',
-      'https://54a0-102-89-83-135.ngrok-free.app',
-      'http://localhost:5173'
-    ]
-  }));
+  origin: [
+    'https://randomstring.ngrok.app',
+    'https://54a0-102-89-83-135.ngrok-free.app',
+    'https://pl56tf0f-5173.uks1.devtunnels.ms',
+    'http://localhost:5173'
+  ],
+}));
 app.use(express.json());
 
 // Configure upload directory
@@ -36,7 +54,6 @@ const storage = multer.diskStorage({
     cb(null, UPLOAD_FOLDER);
   },
   filename: (req, file, cb) => {
-    // Generate unique filename
     const uniqueName = `${uuidv4()}_${file.originalname}`;
     cb(null, uniqueName);
   },
@@ -47,11 +64,33 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB file size limit
 });
 
+// Socket.IO connection
+io.on('connection', (socket) => {
+  console.log('A user connected:', socket.id);
+
+  // Handle custom events
+  socket.on('upload', (data) => {
+    console.log('Upload event received:', data);
+    // Broadcast event to all connected clients
+    io.emit('file-uploaded', { message: 'A new file has been uploaded!' });
+  });
+
+  socket.on('disconnect', () => {
+    console.log('A user disconnected:', socket.id);
+  });
+});
+
 // Upload file route
 app.post('/upload', upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
+
+  // Notify all clients of new file upload
+  io.emit('file-uploaded', {
+    message: 'File uploaded successfully',
+    filename: req.file.filename,
+  });
 
   res.json({
     message: 'File uploaded successfully',
@@ -60,9 +99,10 @@ app.post('/upload', upload.single('file'), (req, res) => {
 });
 
 // List files route
-app.get("/", (req, res)=> {
-    res.send('Hello world')
-})
+app.get("/", (req, res) => {
+  res.send('Hello world');
+});
+
 app.get('/files', (req, res) => {
   fs.readdir(UPLOAD_FOLDER, (err, files) => {
     if (err) {
@@ -109,6 +149,9 @@ app.delete('/delete/:filename', (req, res) => {
     if (err) {
       return res.status(500).json({ error: 'Could not delete file' });
     }
+
+    // Notify all clients of file deletion
+    io.emit('file-deleted', { message: `${req.params.filename} has been deleted.` });
     res.json({ message: 'File deleted successfully' });
   });
 });
@@ -128,7 +171,7 @@ function getLocalIP() {
 }
 
 // Start server
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   const localIP = getLocalIP();
   console.log(`Server running on http://${localIP}:${PORT}`);
 });
