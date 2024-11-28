@@ -75,6 +75,17 @@ io.on('connection', (socket) => {
     io.emit('file-uploaded', { message: 'A new file has been uploaded!' });
   });
 
+  // Handle incoming chat messages
+  socket.on('send-message', (messageData) => {
+    console.log('Message received:', messageData);
+    // Emit the message to all connected clients
+    io.emit('new-message', {
+      username: messageData.username,
+      message: messageData.message,
+      timestamp: new Date(),
+    });
+  });
+
   socket.on('disconnect', () => {
     console.log('A user disconnected:', socket.id);
   });
